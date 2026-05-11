@@ -1,0 +1,52 @@
+{
+  "name": "slide-editor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean:mac": "find src-tauri -name '._*' -delete 2>/dev/null; true",
+    "tauri": "bun run clean:mac && tauri"
+  },
+  "dependencies": {
+    "@fontsource/bebas-neue": "^5.1.0",
+    "@fontsource/dancing-script": "^5.1.0",
+    "@fontsource/inter": "^5.1.0",
+    "@fontsource/lato": "^5.1.0",
+    "@fontsource/lobster": "^5.1.0",
+    "@fontsource/merriweather": "^5.1.0",
+    "@fontsource/montserrat": "^5.1.0",
+    "@fontsource/nunito": "^5.1.0",
+    "@fontsource/open-sans": "^5.1.0",
+    "@fontsource/oswald": "^5.1.0",
+    "@fontsource/pacifico": "^5.1.0",
+    "@fontsource/playfair-display": "^5.1.0",
+    "@fontsource/poppins": "^5.1.0",
+    "@fontsource/raleway": "^5.1.0",
+    "@fontsource/roboto": "^5.1.0",
+    "@tauri-apps/api": "^2.3.0",
+    "@tauri-apps/plugin-dialog": "^2.2.0",
+    "@tauri-apps/plugin-fs": "^2.2.0",
+    "@tauri-apps/plugin-http": "^2.3.0",
+    "@types/node": "^25.6.2",
+    "fabric": "^6.5.4",
+    "nanoid": "^5.1.5",
+    "pinia": "^2.3.1",
+    "vue": "^3.5.13",
+    "vue-draggable-plus": "^0.6.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.1",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.3",
+    "vitest": "^3.2.0",
+    "vue-tsc": "^2.2.0"
+  }
+}

@@ -1,0 +1,4 @@
+[build]
+# Redirect Cargo target directory to main drive to avoid macOS resource fork issues
+# on external (non-HFS+) volumes.
+target-dir = "/Users/julieljordao/.cache/slide-editor/target"

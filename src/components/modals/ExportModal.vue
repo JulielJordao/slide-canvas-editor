@@ -195,7 +195,18 @@ async function doExportVideo() {
         const blob = new Blob(chunks, { type: mimeType });
         const buf = await blob.arrayBuffer();
         const { invoke } = await import('@tauri-apps/api/core');
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        // Encode in 32KB chunks to avoid "Maximum call stack size exceeded"
+        // from String.fromCharCode(...spread) on multi-MB video buffers.
+        const bytes = new Uint8Array(buf);
+        const CHUNK = 0x8000; // 32KB
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          binary += String.fromCharCode.apply(
+            null,
+            bytes.subarray(i, i + CHUNK) as unknown as number[],
+          );
+        }
+        const base64 = btoa(binary);
         await invoke('save_image', { path, data: base64 });
         successMsg.value = 'Vídeo exportado com sucesso!';
         setTimeout(() => uiStore.closeModal(), 1800);

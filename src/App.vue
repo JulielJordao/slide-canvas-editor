@@ -7,7 +7,11 @@
         <SlideCanvas />
         <!-- Timeline panel (animation mode only) -->
         <Transition name="slide-up">
-          <div class="timeline-area" v-if="animStore.isAnimationMode">
+          <div
+            class="timeline-area"
+            v-if="animStore.isAnimationMode"
+            :style="{ height: animStore.timelineHeight + 'px' }"
+          >
             <TimelinePanel />
           </div>
         </Transition>
@@ -101,10 +105,10 @@ onUnmounted(() => {
 }
 
 .timeline-area {
-  height: 220px;
   flex-shrink: 0;
   background: var(--bg-sidebar);
   border-top: 1px solid var(--border);
+  /* height now comes from animStore.timelineHeight (resizable) */
 }
 
 .right-column {

@@ -1,5 +1,13 @@
 <template>
   <div class="timeline-panel">
+    <!-- Resize handle — drag to change panel height -->
+    <div
+      class="resize-handle"
+      :class="{ active: isResizing }"
+      @mousedown.stop.prevent="startResize"
+      title="Arrastar para redimensionar a timeline"
+    />
+
     <!-- Controls bar -->
     <div class="timeline-controls">
       <div class="controls-left">
@@ -67,8 +75,8 @@
     </div>
 
     <!-- Timeline ruler + tracks -->
-    <div class="timeline-body" ref="bodyRef" @scroll="onScroll">
-      <div class="timeline-left-col">
+    <div class="timeline-body" ref="bodyRef">
+      <div class="timeline-left-col" ref="leftColRef">
         <div class="ruler-spacer" />
         <div
           v-for="track in tracks"
@@ -99,7 +107,7 @@
         </div>
       </div>
 
-      <div class="timeline-scroll-area" ref="scrollRef">
+      <div class="timeline-scroll-area" ref="scrollRef" @scroll="onScrollAreaScroll">
         <!-- Ruler -->
         <div class="ruler" :style="rulerStyle">
           <div
@@ -183,6 +191,43 @@ const { getObjectList, ensureObjectIds } = useObjectUtils(getCanvas);
 
 const bodyRef = ref<HTMLElement | null>(null);
 const scrollRef = ref<HTMLElement | null>(null);
+const leftColRef = ref<HTMLElement | null>(null);
+
+// ── Vertical scroll sync ────────────────────────────────────────────────────
+// The track list (right pane) and label list (left col) must stay aligned when
+// there are more tracks than fit.  The right pane owns the scroll; the left
+// col mirrors its scrollTop.
+function onScrollAreaScroll() {
+  if (!scrollRef.value || !leftColRef.value) return;
+  leftColRef.value.scrollTop = scrollRef.value.scrollTop;
+}
+
+// ── Resize handle ──────────────────────────────────────────────────────────
+const isResizing = ref(false);
+let resizeStartY = 0;
+let resizeStartHeight = 0;
+
+function startResize(e: MouseEvent) {
+  isResizing.value = true;
+  resizeStartY = e.clientY;
+  resizeStartHeight = animStore.timelineHeight;
+  document.body.style.cursor = 'ns-resize';
+  document.body.style.userSelect = 'none';
+}
+
+function onResizeMove(e: MouseEvent) {
+  if (!isResizing.value) return;
+  // Dragging UP shrinks the canvas above and GROWS the timeline.
+  const dy = resizeStartY - e.clientY;
+  animStore.setTimelineHeight(resizeStartHeight + dy);
+}
+
+function onResizeUp() {
+  if (!isResizing.value) return;
+  isResizing.value = false;
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+}
 
 const slideAnimation = computed(() => slidesStore.activeSlide?.animation);
 
@@ -379,13 +424,13 @@ function removeEffect(effectId: string) {
   slidesStore.removeAnimationEffect(slidesStore.activeSlide.id, effectId);
 }
 
-function onScroll() {}
-
 onMounted(() => {
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mouseup', onMouseUp);
   window.addEventListener('mousemove', onEffectGlobalMouseMove);
   window.addEventListener('mouseup', onEffectGlobalMouseUp);
+  window.addEventListener('mousemove', onResizeMove);
+  window.addEventListener('mouseup', onResizeUp);
 });
 
 onUnmounted(() => {
@@ -393,6 +438,8 @@ onUnmounted(() => {
   window.removeEventListener('mouseup', onMouseUp);
   window.removeEventListener('mousemove', onEffectGlobalMouseMove);
   window.removeEventListener('mouseup', onEffectGlobalMouseUp);
+  window.removeEventListener('mousemove', onResizeMove);
+  window.removeEventListener('mouseup', onResizeUp);
 });
 </script>
 
@@ -403,6 +450,25 @@ onUnmounted(() => {
   height: 100%;
   background: var(--bg-sidebar);
   border-top: 1px solid var(--border);
+  position: relative;
+}
+
+/* Resize handle — sits at the very top edge of the panel */
+.resize-handle {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 30;
+  background: transparent;
+  transition: background 0.15s;
+}
+.resize-handle:hover,
+.resize-handle.active {
+  background: var(--accent);
+  opacity: 0.6;
 }
 
 .timeline-controls {
@@ -480,6 +546,9 @@ onUnmounted(() => {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  /* Hide overflow but allow programmatic scrollTop sync with the right pane.
+     We hide the scrollbar entirely so only the right side shows one. */
+  overflow: hidden;
 }
 
 .ruler-spacer { height: 24px; border-bottom: 1px solid var(--border); }

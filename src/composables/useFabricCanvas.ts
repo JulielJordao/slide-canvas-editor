@@ -133,12 +133,19 @@ export function useFabricCanvas() {
   async function loadJSON(json: string): Promise<void> {
     if (!canvasInstance) return;
     isApplyingHistory = true;
+    // Cancel any pending debounced push scheduled by a previous edit.
+    if (historyDebounceTimer) {
+      clearTimeout(historyDebounceTimer);
+      historyDebounceTimer = null;
+    }
     try {
       await canvasInstance.loadFromJSON(JSON.parse(json));
       canvasInstance.requestRenderAll();
     } finally {
-      // Defer release until Fabric's object:added events have settled
-      setTimeout(() => { isApplyingHistory = false; }, 100);
+      // Keep suppression long enough to cover any debounced animation-watcher
+      // timer (350ms) — otherwise that timer fires after the flag clears and
+      // pushes a duplicate which wipes the future stack, breaking redo.
+      setTimeout(() => { isApplyingHistory = false; }, 600);
     }
   }
 
@@ -161,6 +168,10 @@ export function useFabricCanvas() {
     }
 
     isApplyingHistory = true;
+    if (historyDebounceTimer) {
+      clearTimeout(historyDebounceTimer);
+      historyDebounceTimer = null;
+    }
     try {
       await canvasInstance.loadFromJSON(JSON.parse(fabricJSON));
       canvasInstance.requestRenderAll();
@@ -169,7 +180,8 @@ export function useFabricCanvas() {
         slidesStore.activeSlide.animation = animation;
       }
     } finally {
-      setTimeout(() => { isApplyingHistory = false; }, 100);
+      // 600ms covers the 350ms animation-watcher debounce — see loadJSON.
+      setTimeout(() => { isApplyingHistory = false; }, 600);
     }
   }
 
@@ -183,6 +195,14 @@ export function useFabricCanvas() {
 
   onUnmounted(disposeCanvas);
 
+  // Expose the suppression flag as a getter so external watchers (e.g. the
+  // animation deep watch in SlideCanvas) can skip scheduling pushes during
+  // programmatic loads.  Without this, undo would trigger a watcher fire that
+  // re-pushes the just-restored state and clears the future stack.
+  function isHistorySuppressed(): boolean {
+    return isApplyingHistory;
+  }
+
   return {
     canvasRef,
     getCanvas,
@@ -192,6 +212,8 @@ export function useFabricCanvas() {
     loadJSON,
     loadSnapshot,
     pushHistoryNow,
+    scheduleHistoryPush,
+    isHistorySuppressed,
     disposeCanvas,
     CUSTOM_PROPS,
   };

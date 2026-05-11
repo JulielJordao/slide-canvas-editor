@@ -78,7 +78,7 @@ const slidesStore = useSlidesStore();
 const historyStore = useHistoryStore();
 const animStore = useAnimationStore();
 
-const { initCanvas, getCanvas, getJSON, loadJSON, getSnapshot, loadSnapshot, pushHistoryNow, CUSTOM_PROPS } = useFabricCanvas();
+const { initCanvas, getCanvas, getJSON, loadJSON, getSnapshot, loadSnapshot, scheduleHistoryPush, isHistorySuppressed, CUSTOM_PROPS } = useFabricCanvas();
 const bgComposable = useCanvasBackground(getCanvas);
 const { handleFilePaths, addImageToCanvas } = useDragDrop(getCanvas);
 
@@ -199,6 +199,24 @@ async function initializeCanvas() {
   // Apply handle colours that contrast with the current background
   applySelectionColors();
 
+  // Ensure every new object has a name (needed for animation tracking) and
+  // sync canvas selection → animation panel.  These listeners must be
+  // re-attached on every canvas re-init (e.g. project open / slide switch)
+  // because initCanvas disposes the previous instance.
+  canvas.on('object:added', (e: any) => {
+    const obj = e.target;
+    if (obj && !(obj as any).name) (obj as any).name = nanoid(8);
+  });
+  const syncToTimeline = () => {
+    const obj = canvas.getActiveObject();
+    if (!obj) return;
+    if (!(obj as any).name) (obj as any).name = nanoid(8);
+    animStore.selectedEffectObjectId = (obj as any).name;
+  };
+  canvas.on('selection:created', syncToTimeline);
+  canvas.on('selection:updated', syncToTimeline);
+  canvas.on('selection:cleared', () => { animStore.selectedEffectObjectId = ''; });
+
   // Right-click context menu for effect preview
   const wrapperEl = (canvas as any).wrapperEl as HTMLElement | undefined;
   wrapperEl?.addEventListener('contextmenu', handleCanvasContextMenu);
@@ -293,13 +311,16 @@ function handleRedo() {
 }
 
 // Push history when the animation timeline changes (add/remove/edit effect,
-// transition).  Debounced so rapid drag updates collapse into one entry.
-let animHistoryTimer: ReturnType<typeof setTimeout> | null = null;
+// transition).  We use scheduleHistoryPush (not pushHistoryNow) so that the
+// suppression check runs at watch fire time — if we're inside a load (undo or
+// redo), this is a no-op.  Without that, the watcher would fire during the
+// restore, set a timer, and the timer would push a duplicate after the flag
+// cleared — wiping the future stack and breaking redo.
 watch(
   () => slidesStore.activeSlide?.animation,
   () => {
-    if (animHistoryTimer) clearTimeout(animHistoryTimer);
-    animHistoryTimer = setTimeout(() => pushHistoryNow(), 350);
+    if (isHistorySuppressed()) return;
+    scheduleHistoryPush();
   },
   { deep: true }
 );
@@ -425,26 +446,6 @@ onMounted(async () => {
 
     el.addEventListener('click', onPick, { once: true });
   });
-
-  // Ensure every new object has a name (needed for animation tracking)
-  // and sync canvas selection → timeline
-  const canvas = getCanvas();
-  if (canvas) {
-    canvas.on('object:added', (e: any) => {
-      const obj = e.target;
-      if (obj && !(obj as any).name) (obj as any).name = nanoid(8);
-    });
-    const syncToTimeline = () => {
-      const obj = canvas.getActiveObject();
-      if (!obj) return;
-      // Guarantee an id so the timeline / effects panel can target this object
-      if (!(obj as any).name) (obj as any).name = nanoid(8);
-      animStore.selectedEffectObjectId = (obj as any).name;
-    };
-    canvas.on('selection:created', syncToTimeline);
-    canvas.on('selection:updated', syncToTimeline);
-    canvas.on('selection:cleared', () => { animStore.selectedEffectObjectId = ''; });
-  }
 
   // Listen for image add events from sidebar
   window.addEventListener('se:add-image', async (e: Event) => {

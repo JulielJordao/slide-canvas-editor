@@ -137,7 +137,8 @@ export function useObjectUtils(getCanvas: () => fabric.Canvas | null) {
 
   function getLabelForObject(o: fabric.Object): string {
     if ((o as any).text) return `"${(o as any).text.slice(0, 18)}"`;
-    if (o.type === 'image') return 'Imagem';
+    // Fabric v6 uses PascalCase types ('Image'); normalize for comparison.
+    if ((o.type ?? '').toLowerCase() === 'image') return 'Imagem';
     if ((o as any).name) return (o as any).name;
     return o.type ?? 'Objeto';
   }

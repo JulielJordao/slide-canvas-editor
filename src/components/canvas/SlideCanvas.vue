@@ -78,7 +78,13 @@ const slidesStore = useSlidesStore();
 const historyStore = useHistoryStore();
 const animStore = useAnimationStore();
 
-const { initCanvas, getCanvas, getJSON, loadJSON, getSnapshot, loadSnapshot, scheduleHistoryPush, isHistorySuppressed, CUSTOM_PROPS } = useFabricCanvas();
+const {
+  initCanvas, getCanvas, getJSON, loadJSON,
+  getSnapshot, loadSnapshot,
+  pushHistoryNow, scheduleHistoryPush,
+  isHistorySuppressed, isDragSuppressed, setInteractiveDrag,
+  CUSTOM_PROPS,
+} = useFabricCanvas();
 const bgComposable = useCanvasBackground(getCanvas);
 const { handleFilePaths, addImageToCanvas } = useDragDrop(getCanvas);
 
@@ -179,16 +185,23 @@ async function initializeCanvas() {
 
   // Expose canvas globally for components that need direct access
   (window as any).__slideEditorCanvas = canvas;
+  // Expose the animation time-application so external flows (video export)
+  // can put the canvas into its t=0 state (objects with entry effects hidden)
+  // BEFORE recording begins — otherwise the first captured frame shows
+  // everything as visible.
+  (window as any).__slideEditorApplyTime = applyTimeMs;
 
-  // Apply background
-  await bgComposable.applyBackground(slidesStore.activeSlide.background);
-
-  // Load slide JSON
+  // Load slide JSON first — loadFromJSON resets canvas state, so background
+  // must be applied AFTER to avoid being overwritten by whatever was serialised.
   const json = slidesStore.activeSlide.fabricJSON;
   if (json && json !== JSON.stringify({ version: '6.0.0', objects: [] })) {
     await loadFontsFromJSON(json);
     await loadJSON(json);
   }
+
+  // Apply background after loading objects — also ensures video/image
+  // backgroundImage is always driven by slide.background (not the JSON).
+  await bgComposable.applyBackground(slidesStore.activeSlide.background);
 
   // Init history for this slide — snapshot includes canvas + animation
   historyStore.initSlide(slidesStore.activeSlide.id, getSnapshot());
@@ -250,9 +263,9 @@ watch(
     const newSlide = slidesStore.slides[newIdx];
     if (!newSlide) return;
 
-    await bgComposable.applyBackground(newSlide.background);
     await loadFontsFromJSON(newSlide.fabricJSON);
     await loadJSON(newSlide.fabricJSON);
+    await bgComposable.applyBackground(newSlide.background);
     applySelectionColors();
 
     if (!historyStore.canUndo(newSlide.id) && !historyStore.canRedo(newSlide.id)) {
@@ -294,36 +307,47 @@ watch(
 // object:added/removed events fired by Fabric during loadFromJSON do NOT call
 // scheduleHistoryPush — which would otherwise clear the future stack and
 // permanently break redo.
-function handleUndo() {
+async function handleUndo() {
   const canvas = getCanvas();
   if (!canvas) return;
   const slideId = slidesStore.activeSlide.id;
   const snapshot = historyStore.undo(slideId);
-  if (snapshot) loadSnapshot(snapshot);
+  if (snapshot) {
+    await loadSnapshot(snapshot);
+    // Background is stripped from snapshots so it must be re-applied after restore.
+    await bgComposable.applyBackground(slidesStore.activeSlide.background);
+  }
 }
 
-function handleRedo() {
+async function handleRedo() {
   const canvas = getCanvas();
   if (!canvas) return;
   const slideId = slidesStore.activeSlide.id;
   const snapshot = historyStore.redo(slideId);
-  if (snapshot) loadSnapshot(snapshot);
+  if (snapshot) {
+    await loadSnapshot(snapshot);
+    await bgComposable.applyBackground(slidesStore.activeSlide.background);
+  }
 }
 
-// Push history when the animation timeline changes (add/remove/edit effect,
-// transition).  We use scheduleHistoryPush (not pushHistoryNow) so that the
-// suppression check runs at watch fire time — if we're inside a load (undo or
-// redo), this is a no-op.  Without that, the watcher would fire during the
-// restore, set a timer, and the timer would push a duplicate after the flag
-// cleared — wiping the future stack and breaking redo.
-watch(
-  () => slidesStore.activeSlide?.animation,
-  () => {
-    if (isHistorySuppressed()) return;
-    scheduleHistoryPush();
-  },
-  { deep: true }
-);
+// History for animation changes is pushed explicitly via se:commit-history
+// dispatched at the action site (AnimationEffectsPanel, TimelinePanel).
+// Drag operations use se:drag-start / se:drag-end to collapse mousemove
+// mutations into a single checkpoint on mouse-up.
+
+function handleCommitHistory() {
+  if (isHistorySuppressed()) return;
+  pushHistoryNow();
+}
+
+function handleInteractiveDragStart() {
+  setInteractiveDrag(true);
+}
+
+function handleInteractiveDragEnd() {
+  setInteractiveDrag(false);
+  if (!isHistorySuppressed()) pushHistoryNow();
+}
 
 // Global keyboard shortcuts
 function handleKeyDown(e: KeyboardEvent) {
@@ -469,6 +493,13 @@ onMounted(async () => {
 
   // Timeline hover preview: seek canvas to the given time without moving the playhead
   window.addEventListener('se:preview-time', handlePreviewTime);
+
+  // Explicit history-commit signal from action sites that need a discrete
+  // checkpoint (e.g. timeline drag-end).  Also drag start/end pair from
+  // TimelinePanel — see comments on the animation watcher above.
+  window.addEventListener('se:commit-history', handleCommitHistory);
+  window.addEventListener('se:drag-start', handleInteractiveDragStart);
+  window.addEventListener('se:drag-end', handleInteractiveDragEnd);
 });
 
 function handlePreviewTime(e: Event) {
@@ -484,6 +515,9 @@ onUnmounted(() => {
   window.removeEventListener('se:undo', handleUndo);
   window.removeEventListener('se:redo', handleRedo);
   window.removeEventListener('se:preview-time', handlePreviewTime);
+  window.removeEventListener('se:commit-history', handleCommitHistory);
+  window.removeEventListener('se:drag-start', handleInteractiveDragStart);
+  window.removeEventListener('se:drag-end', handleInteractiveDragEnd);
   window.removeEventListener('click', dismissContextMenu);
 });
 </script>

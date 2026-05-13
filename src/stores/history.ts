@@ -55,5 +55,9 @@ export const useHistoryStore = defineStore('history', () => {
     stacks.value[slideId] = { past: [initialJSON], future: [] };
   }
 
-  return { push, undo, redo, canUndo, canRedo, initSlide };
+  function resetAll() {
+    stacks.value = {};
+  }
+
+  return { push, undo, redo, canUndo, canRedo, initSlide, resetAll };
 });

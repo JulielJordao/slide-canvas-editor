@@ -53,19 +53,21 @@ async function addText(text: string, fontSize: number, fontWeight: string) {
   const fontFamily = settings.recentFonts[0] ?? 'Inter';
   await loadGoogleFont(fontFamily);
 
-  const itext = new fabric.IText(text, {
+  const textbox = new fabric.Textbox(text, {
     left: canvas.getWidth() / 2,
     top: canvas.getHeight() / 2,
     originX: 'center',
     originY: 'center',
+    width: canvas.getWidth() * 0.75,
     fontFamily,
     fontSize,
     fontWeight,
     fill: '#ffffff',
-  } as Partial<fabric.IText>);
+    textAlign: 'center',
+  } as Partial<fabric.Textbox>);
 
-  canvas.add(itext);
-  canvas.setActiveObject(itext);
+  canvas.add(textbox);
+  canvas.setActiveObject(textbox);
   canvas.requestRenderAll();
 }
 

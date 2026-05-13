@@ -49,9 +49,38 @@ import { ref, reactive, watch, onMounted, onUnmounted } from 'vue';
 import { filePathToDataUrl } from '@/utils/fileToDataUrl';
 import { useDropZone, IMAGE_EXTS, getExt } from '@/composables/useDragDrop';
 
+const RECENT_IMAGES_KEY = 'se:recent_images';
+const RECENT_IMAGES_MAX = 40;
+
+function loadPersistedRecents(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_IMAGES_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((s): s is string => typeof s === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 const panelRef = ref<HTMLDivElement | null>(null);
-const recentImages = ref<string[]>([]);
+const recentImages = ref<string[]>(loadPersistedRecents());
 const thumbnailUrls = reactive(new Map<string, string>());
+
+watch(recentImages, (paths) => {
+  try {
+    localStorage.setItem(RECENT_IMAGES_KEY, JSON.stringify(paths.slice(0, RECENT_IMAGES_MAX)));
+  } catch {
+    // localStorage quota / private mode — ignore silently
+  }
+}, { deep: true });
+
+function pushRecent(path: string) {
+  if (!path) return;
+  const list = recentImages.value.filter(p => p !== path);
+  list.unshift(path);
+  recentImages.value = list.slice(0, RECENT_IMAGES_MAX);
+}
 
 // Register this panel as a drop zone.  Drops onto the sidebar add the image
 // paths to "Recentes" WITHOUT placing them on the canvas — that's the canvas
@@ -59,7 +88,7 @@ const thumbnailUrls = reactive(new Map<string, string>());
 const { isOver: isDropOver } = useDropZone(panelRef, (paths) => {
   for (const p of paths) {
     if (!IMAGE_EXTS.has(getExt(p))) continue;
-    if (!recentImages.value.includes(p)) recentImages.value.unshift(p);
+    pushRecent(p);
   }
 });
 
@@ -87,7 +116,7 @@ async function openFilePicker() {
     if (!selected) return;
     const path = Array.isArray(selected) ? selected[0] : selected;
     if (!path) return;
-    if (!recentImages.value.includes(path)) recentImages.value.unshift(path);
+    pushRecent(path);
     window.dispatchEvent(new CustomEvent('se:add-image', { detail: { path } }));
   } catch {
     // Browser mode fallback — single file only
@@ -115,7 +144,7 @@ function addImageByPath(path: string) {
 
 function onAddImageEvent(e: Event) {
   const path = (e as CustomEvent).detail.path as string;
-  if (path && !recentImages.value.includes(path)) recentImages.value.unshift(path);
+  pushRecent(path);
 }
 
 onMounted(() => window.addEventListener('se:add-image', onAddImageEvent));

@@ -23,9 +23,7 @@
 
     <!-- === TEXT === -->
     <template v-else-if="selType === 'text'">
-      <select class="ctx-font" :value="textFont" @change="onFont" title="Fonte">
-        <option v-for="f in fontOpts" :key="f" :value="f">{{ f }}</option>
-      </select>
+      <FontDropdown :model-value="textFont" placement="auto" @select="onFont" />
       <input type="number" class="ctx-num" min="6" max="800" step="1" :value="textSize" @change="onSize" title="Tamanho da fonte" />
       <ColorPicker :model-value="textColor" @update:model-value="onTextColor" />
       <div class="sep" />
@@ -128,6 +126,7 @@
 import { computed } from 'vue';
 import * as fabric from 'fabric';
 import ColorPicker from '@/components/shared/ColorPicker.vue';
+import FontDropdown from '@/components/shared/FontDropdown.vue';
 import { useCanvasStore } from '@/stores/canvas';
 import { useSlidesStore } from '@/stores/slides';
 import { useSettingsStore } from '@/stores/settings';
@@ -140,13 +139,6 @@ const canvasStore = useCanvasStore();
 const slidesStore = useSlidesStore();
 const settingsStore = useSettingsStore();
 const bgComposable = useCanvasBackground(props.canvasGetter);
-
-const POPULAR_FONTS = [
-  'Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins',
-  'Nunito', 'Oswald', 'Raleway', 'Merriweather', 'Playfair Display',
-  'Bebas Neue', 'Dancing Script', 'Pacifico', 'Lobster',
-  'Arial', 'Georgia', 'Verdana', 'Courier New',
-];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -177,14 +169,16 @@ function onBgColor(color: string) {
 function addText() {
   const canvas = getCanvas();
   if (!canvas) return;
-  const text = new fabric.IText('Texto', {
+  const text = new fabric.Textbox('Texto', {
     left: canvas.getWidth() / 2,
     top: canvas.getHeight() / 2,
     originX: 'center',
     originY: 'center',
+    width: canvas.getWidth() * 0.75,
     fontSize: 48,
     fill: '#ffffff',
     fontFamily: 'Inter',
+    textAlign: 'center',
   } as any);
   canvas.add(text);
   canvas.setActiveObject(text);
@@ -210,12 +204,6 @@ function addRect() {
 
 // ── Text ─────────────────────────────────────────────────────────────────────
 
-const fontOpts = computed(() => {
-  const current = (getActive() as any)?.fontFamily ?? '';
-  const recent = settingsStore.recentFonts;
-  return [...new Set([current, ...recent, ...POPULAR_FONTS])].filter(Boolean).slice(0, 25) as string[];
-});
-
 const textFont = computed(() => (getActive() as any)?.fontFamily ?? 'Inter');
 const textSize = computed(() => (getActive() as any)?.fontSize ?? 24);
 const textColor = computed(() => (getActive() as any)?.fill ?? '#ffffff');
@@ -224,8 +212,7 @@ const isItalic = computed(() => (getActive() as any)?.fontStyle === 'italic');
 const hasUnderline = computed(() => !!(getActive() as any)?.underline);
 const textAlign = computed(() => (getActive() as any)?.textAlign ?? 'left');
 
-async function onFont(e: Event) {
-  const family = (e.target as HTMLSelectElement).value;
+async function onFont(family: string) {
   await loadGoogleFont(family);
   settingsStore.addRecentFont(family);
   (getActive() as any)?.set('fontFamily', family);
@@ -260,7 +247,16 @@ function toggleUnderline() {
   rerender();
 }
 
-function setAlign(align: string) { (getActive() as any)?.set('textAlign', align); rerender(); }
+function setAlign(align: string) {
+  const obj = getActive() as any;
+  if (!obj) return;
+  obj.set('textAlign', align);
+  // Force Fabric to redraw the cached buffer — without this, legacy IText
+  // objects can keep showing the previous alignment.
+  obj.dirty = true;
+  obj.setCoords();
+  rerender();
+}
 
 // ── Image / Shape ────────────────────────────────────────────────────────────
 

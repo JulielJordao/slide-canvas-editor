@@ -79,6 +79,14 @@
     </div>
 
     <div class="toolbar-right">
+      <button class="icon-btn" title="Novo projeto" @click="newProject">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="11" x2="12" y2="17"/>
+          <line x1="9" y1="14" x2="15" y2="14"/>
+        </svg>
+      </button>
       <button class="icon-btn" title="Abrir projeto (.sedp)" @click="openFromFile">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -117,7 +125,7 @@ import { useUiStore } from '@/stores/ui';
 import { useSlidesStore } from '@/stores/slides';
 import { useHistoryStore } from '@/stores/history';
 import { useAnimationStore } from '@/stores/animation';
-import { save as dialogSave, open as dialogOpen } from '@tauri-apps/plugin-dialog';
+import { save as dialogSave, open as dialogOpen, confirm as dialogConfirm } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs';
 
 const canvasStore = useCanvasStore();
@@ -134,6 +142,18 @@ const isSavingFile = ref(false);
 
 function handleUndo() { window.dispatchEvent(new CustomEvent('se:undo')); }
 function handleRedo() { window.dispatchEvent(new CustomEvent('se:redo')); }
+
+async function newProject() {
+  const ok = await dialogConfirm(
+    'Deseja iniciar um novo projeto? Todas as alterações não salvas serão perdidas.',
+    { title: 'Novo projeto', kind: 'warning' },
+  );
+  if (!ok) return;
+  slidesStore.resetProject();
+  historyStore.resetAll();
+  await new Promise(r => setTimeout(r, 50));
+  window.dispatchEvent(new CustomEvent('se:reload-canvas'));
+}
 function increaseZoom() { canvasStore.setZoom(canvasStore.zoom + 0.1); }
 function decreaseZoom() { canvasStore.setZoom(canvasStore.zoom - 0.1); }
 

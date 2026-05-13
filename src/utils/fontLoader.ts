@@ -32,6 +32,14 @@ export async function loadFontsFromJSON(json: string): Promise<void> {
       if (obj.fontFamily) families.add(obj.fontFamily);
     }
     await Promise.all([...families].map(f => loadGoogleFont(f)));
+    // Belt-and-suspenders: wait until ALL pending font faces have actually
+    // resolved.  Without this, Fabric's text-width measurement may run with
+    // fallback metrics (because the canvas 2D context can't see the font
+    // yet), producing a slightly-too-narrow width that clips the last
+    // character on the right when the text is restored.
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      await document.fonts.ready;
+    }
   } catch {
     // ignore parse errors
   }

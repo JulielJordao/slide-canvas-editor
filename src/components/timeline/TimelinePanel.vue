@@ -254,7 +254,17 @@ const rulerMarks = computed(() => {
   return marks;
 });
 
+// Reactive revision counter bumped on every canvas object add/remove (see
+// useFabricCanvas).  Without it, `tracks` would not recompute when a saved
+// file is loaded: slideAnimation.value updates reactively but
+// canvas.getObjects() is a non-reactive call, so the timeline would stay
+// empty until the user touched an effect.
+const canvasRev = ref(0);
+function bumpCanvasRev() { canvasRev.value++; }
+
 const tracks = computed(() => {
+  // Touch the revision counter so canvas object add/remove triggers recompute.
+  canvasRev.value;
   if (!slideAnimation.value) return [];
   const objectList = getObjectList();
   return objectList.map(obj => ({
@@ -306,6 +316,7 @@ function onDurationChange(e: Event) {
     const ms = Math.round(secs * 1000);
     animStore.setTotalDuration(ms);
     slidesStore.setSlideDuration(slidesStore.activeSlide.id, ms);
+    window.dispatchEvent(new CustomEvent('se:commit-history'));
   }
 }
 
@@ -357,6 +368,9 @@ function startDragEffect(e: MouseEvent, effect: AnimationEffect) {
     originalStartMs: effect.startMs,
     originalDurationMs: effect.durationMs,
   };
+  // Tell SlideCanvas to suppress per-mutation history pushes for the
+  // duration of this drag — see the animation watcher in SlideCanvas.vue.
+  window.dispatchEvent(new CustomEvent('se:drag-start'));
   e.preventDefault();
 }
 
@@ -368,6 +382,7 @@ function startResizeEffect(e: MouseEvent, effect: AnimationEffect, side: 'left' 
     originalStartMs: effect.startMs,
     originalDurationMs: effect.durationMs,
   };
+  window.dispatchEvent(new CustomEvent('se:drag-start'));
   e.preventDefault();
 }
 
@@ -400,7 +415,14 @@ function onEffectGlobalMouseMove(e: MouseEvent) {
 }
 
 function onEffectGlobalMouseUp() {
+  if (!dragState) return;
   dragState = null;
+  window.dispatchEvent(new CustomEvent('se:drag-end'));
+}
+
+function removeEffect(effectId: string) {
+  slidesStore.removeAnimationEffect(slidesStore.activeSlide.id, effectId);
+  window.dispatchEvent(new CustomEvent('se:commit-history'));
 }
 
 // ── Hover preview ─────────────────────────────────────────────────────────────
@@ -420,8 +442,13 @@ function onEffectLeave() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function removeEffect(effectId: string) {
-  slidesStore.removeAnimationEffect(slidesStore.activeSlide.id, effectId);
+// Safety reset: if the user releases the mouse outside the window (blur),
+// clear any in-flight drag so the suppression flag doesn't stay stuck.
+function onWindowBlur() {
+  if (dragState) {
+    dragState = null;
+    window.dispatchEvent(new CustomEvent('se:drag-end'));
+  }
 }
 
 onMounted(() => {
@@ -431,6 +458,8 @@ onMounted(() => {
   window.addEventListener('mouseup', onEffectGlobalMouseUp);
   window.addEventListener('mousemove', onResizeMove);
   window.addEventListener('mouseup', onResizeUp);
+  window.addEventListener('blur', onWindowBlur);
+  window.addEventListener('se:canvas-objects-changed', bumpCanvasRev);
 });
 
 onUnmounted(() => {
@@ -440,6 +469,8 @@ onUnmounted(() => {
   window.removeEventListener('mouseup', onEffectGlobalMouseUp);
   window.removeEventListener('mousemove', onResizeMove);
   window.removeEventListener('mouseup', onResizeUp);
+  window.removeEventListener('blur', onWindowBlur);
+  window.removeEventListener('se:canvas-objects-changed', bumpCanvasRev);
 });
 </script>
 

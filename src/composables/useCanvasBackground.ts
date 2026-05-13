@@ -2,9 +2,10 @@ import { watch } from 'vue';
 import * as fabric from 'fabric';
 import type { BackgroundConfig } from '@/types';
 import { filePathToDataUrl } from '@/utils/fileToDataUrl';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { readFile } from '@tauri-apps/plugin-fs';
 
 let videoEl: HTMLVideoElement | null = null;
+let videoBlobUrl: string | null = null;
 let rafId: number | null = null;
 
 function stopVideoBackground() {
@@ -12,9 +13,13 @@ function stopVideoBackground() {
     cancelAnimationFrame(rafId);
     rafId = null;
   }
+  if (videoBlobUrl) {
+    URL.revokeObjectURL(videoBlobUrl);
+    videoBlobUrl = null;
+  }
   if (videoEl) {
     videoEl.pause();
-    videoEl.src = '';
+    videoEl.removeAttribute('src');
     if (videoEl.parentNode) videoEl.parentNode.removeChild(videoEl);
     videoEl = null;
   }
@@ -88,38 +93,100 @@ export function useCanvasBackground(getCanvas: () => fabric.Canvas | null) {
 
     if (config.type === 'video' && config.src) {
       canvas.backgroundColor = '#000000';
-      const url = convertFileSrc(config.src);
 
-      videoEl = document.createElement('video');
-      videoEl.src = url;
-      videoEl.autoplay = true;
-      videoEl.loop = true;
-      videoEl.muted = true;
-      videoEl.playsInline = true;
-      videoEl.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';
-      document.body.appendChild(videoEl);
+      const localVideo = document.createElement('video');
+      videoEl = localVideo;
+      // Do NOT set autoplay — letting both autoplay AND play() race produces
+      // an AbortError when one interrupts the other.  We rely solely on the
+      // explicit play() call below.
+      localVideo.loop = true;
+      localVideo.muted = true;
+      localVideo.playsInline = true;
+      // No crossOrigin — the Blob URL below is same-origin, so the canvas
+      // is never tainted and toDataURL (used for thumbnails) keeps working.
+      localVideo.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';
+      document.body.appendChild(localVideo);
 
-      videoEl.addEventListener('playing', () => {
-        if (!videoEl || !canvas) return;
-        const fabricImg = new fabric.Image(videoEl, {
+      const startRendering = () => {
+        // A newer applyBackground may have re-assigned the module-level
+        // videoEl before this callback runs — bail out if so.
+        if (videoEl !== localVideo || !canvas) return;
+        if (rafId !== null) return;
+        const vw = localVideo.videoWidth || w;
+        const vh = localVideo.videoHeight || h;
+        const fabricImg = new fabric.Image(localVideo, {
           left: 0,
           top: 0,
-          scaleX: w / videoEl.videoWidth,
-          scaleY: h / videoEl.videoHeight,
+          scaleX: w / vw,
+          scaleY: h / vh,
           selectable: false,
           evented: false,
+          // objectCaching MUST be false — Fabric otherwise caches the first
+          // frame and the background appears frozen (or, on some platforms,
+          // entirely black because the cache was captured before the video
+          // produced any frame at all).
+          objectCaching: false,
         });
         canvas.set('backgroundImage', fabricImg);
 
         const render = () => {
-          if (!videoEl || !canvas) return;
+          if (videoEl !== localVideo || !canvas) return;
           canvas.requestRenderAll();
           rafId = requestAnimationFrame(render);
         };
         rafId = requestAnimationFrame(render);
-      }, { once: true });
+      };
 
-      await videoEl.play().catch(() => {});
+      // Listeners MUST be attached before `src=` — once the Blob is assigned,
+      // the video can fire loadeddata/canplay synchronously enough that a
+      // late subscription misses it, and the render loop never starts.
+      localVideo.addEventListener('error', () => {
+        console.error('[CanvasBackground] failed to load video:', config.src, localVideo.error);
+      });
+      localVideo.addEventListener('loadeddata', startRendering);
+      localVideo.addEventListener('canplay', startRendering);
+      localVideo.addEventListener('playing', startRendering);
+
+      // Read the file as a same-origin Blob URL.  This avoids the cross-origin
+      // taint that the asset:// protocol introduces on macOS (which silently
+      // breaks the load when crossOrigin='anonymous' is set, and breaks
+      // toDataURL when it isn't).
+      try {
+        const ext = config.src.split('.').pop()?.toLowerCase() ?? 'mp4';
+        const mime =
+          ext === 'webm' ? 'video/webm' :
+          ext === 'ogv'  ? 'video/ogg' :
+          ext === 'mov'  ? 'video/quicktime' :
+                           'video/mp4';
+        const bytes = await readFile(config.src);
+        videoBlobUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
+        // Abort if a newer applyBackground has already superseded this one
+        // (the await on readFile gives ample time for that to happen).
+        if (videoEl !== localVideo) {
+          URL.revokeObjectURL(videoBlobUrl);
+          videoBlobUrl = null;
+          return;
+        }
+        localVideo.src = videoBlobUrl;
+      } catch (e) {
+        console.error('[CanvasBackground] failed to read video file:', e);
+        return;
+      }
+
+      try {
+        await localVideo.play();
+        // Safety net: if every loadeddata/canplay/playing event fired before
+        // we got here (or was missed), kick off rendering now.
+        startRendering();
+      } catch (e) {
+        // AbortError fires when stopVideoBackground tears down this element
+        // because a fresher applyBackground call took over — that's expected
+        // and not user-visible, so swallow it silently.
+        const err = e as DOMException;
+        if (err?.name !== 'AbortError') {
+          console.warn('[CanvasBackground] video.play() rejected:', e);
+        }
+      }
       return;
     }
 

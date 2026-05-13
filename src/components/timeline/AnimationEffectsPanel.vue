@@ -199,6 +199,7 @@ function addEffect(type: AnimationEffectType) {
     durationMs: speedDurationMs[addSpeed.value],
     easing: 'easeOut',
   });
+  window.dispatchEvent(new CustomEvent('se:commit-history'));
 }
 
 function getSpeedFromMs(ms: number): 'slow' | 'normal' | 'fast' | null {
@@ -210,22 +211,28 @@ function getSpeedFromMs(ms: number): 'slow' | 'normal' | 'fast' | null {
 
 function removeEffect(effectId: string) {
   slidesStore.removeAnimationEffect(slidesStore.activeSlide.id, effectId);
+  window.dispatchEvent(new CustomEvent('se:commit-history'));
 }
 
+let updateEffectTimer: ReturnType<typeof setTimeout> | null = null;
 function updateEffect(effectId: string, key: string, value: any) {
   slidesStore.updateAnimationEffect(slidesStore.activeSlide.id, effectId, { [key]: value } as any);
+  if (updateEffectTimer) clearTimeout(updateEffectTimer);
+  updateEffectTimer = setTimeout(() => window.dispatchEvent(new CustomEvent('se:commit-history')), 400);
 }
 
 function onTransitionType(e: Event) {
   const type = (e.target as HTMLSelectElement).value as BackgroundTransitionType;
   const dur = slideAnimation.value?.outTransition?.durationMs ?? 500;
   slidesStore.setSlideOutTransition(slidesStore.activeSlide.id, { type, durationMs: dur });
+  window.dispatchEvent(new CustomEvent('se:commit-history'));
 }
 
 function onTransitionDuration(e: Event) {
   const secs = Number((e.target as HTMLInputElement).value);
   const type = slideAnimation.value?.outTransition?.type ?? 'fade';
   slidesStore.setSlideOutTransition(slidesStore.activeSlide.id, { type, durationMs: Math.round(secs * 1000) });
+  window.dispatchEvent(new CustomEvent('se:commit-history'));
 }
 
 </script>

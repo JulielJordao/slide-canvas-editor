@@ -128,6 +128,11 @@ export const useSlidesStore = defineStore('slides', () => {
     if (idx !== -1) slide.animation.effects[idx] = { ...slide.animation.effects[idx], ...patch };
   }
 
+  function resetProject() {
+    slides.value = [createBlankSlide()];
+    activeSlideIndex.value = 0;
+  }
+
   return {
     slides, activeSlideIndex, aspectRatio, activeSlide,
     addSlide, duplicateSlide, removeSlide, reorderSlides,
@@ -135,5 +140,6 @@ export const useSlidesStore = defineStore('slides', () => {
     setBackground, setAspectRatio, switchSlide,
     setSlideDuration, setSlideOutTransition,
     addAnimationEffect, removeAnimationEffect, updateAnimationEffect,
+    resetProject,
   };
 });

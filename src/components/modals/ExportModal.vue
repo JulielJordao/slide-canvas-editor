@@ -88,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import { useUiStore } from '@/stores/ui';
 import { useSettingsStore } from '@/stores/settings';
 import { useAnimationStore } from '@/stores/animation';
@@ -180,9 +180,24 @@ async function doExportVideo() {
 
     isVideoExporting.value = true;
 
-    // Deselect all objects so handles don't appear in the recording (Task 7)
+    // Deselect all objects so handles don't appear in the recording.
     canvas.discardActiveObject();
+
+    // Put the canvas in its t=0 state (objects with entry effects hidden)
+    // BEFORE the recorder starts.  Otherwise the first captured frame shows
+    // every object in its final position even when an entry effect should
+    // bring it in later.
+    //
+    // seekTo(0) triggers a watcher that *restores* original positions when
+    // not playing, so we must (a) let that watcher run, then (b) explicitly
+    // apply t=0 to re-hide entry-effect objects, then (c) wait a paint
+    // frame so captureStream sees the hidden state.
+    animStore.seekTo(0);
+    await nextTick();
+    const applyTime = (window as any).__slideEditorApplyTime as ((ms: number) => void) | undefined;
+    if (applyTime) applyTime(0);
     canvas.requestRenderAll();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
     const stream = (canvas.lowerCanvasEl as HTMLCanvasElement).captureStream(30);
     const recorder = new MediaRecorder(stream, { mimeType });
@@ -218,7 +233,6 @@ async function doExportVideo() {
     };
 
     recorder.start();
-    animStore.seekTo(0);
     animStore.play();
 
     setTimeout(() => {

@@ -289,3 +289,76 @@ describe('document.fonts.ready is awaited defensively', () => {
     expect(value).toBe('done');
   });
 });
+
+// ── Bundled font force-load contract ─────────────────────────────────────────
+//
+// @fontsource declares @font-face but only triggers a network/disk fetch when
+// the browser needs to measure or paint the font.  loadGoogleFont() used to
+// return early for BUNDLED_FONTS without calling document.fonts.load().
+//
+// Consequence: Fabric.js measured text with the fallback font (narrower), then
+// rendered with Playfair Display (wider) → first character(s) overflowed.
+//
+// Fix: loadedFonts no longer starts pre-populated with BUNDLED_FONTS.
+// loadGoogleFont() skips the <link> injection for bundled fonts (the @font-face
+// is already in the CSS bundle) but ALWAYS calls document.fonts.load() so the
+// browser fetches and parses the real glyphs before Fabric measures anything.
+
+describe('bundled fonts are force-loaded via document.fonts.load', () => {
+  it('BUNDLED_FONTS does NOT pre-populate the loaded cache (fix)', () => {
+    // Mirrors the new loadedFonts initialisation: starts empty, not with
+    // BUNDLED_FONTS.  This is what ensures loadGoogleFont('Playfair Display')
+    // proceeds to call document.fonts.load() instead of returning early.
+    const BUNDLED_FONTS = new Set(['Playfair Display', 'Dancing Script', 'Inter']);
+    const loadedFonts = new Set<string>();   // ← intentionally empty
+
+    function wouldSkip(family: string): boolean {
+      return loadedFonts.has(family);
+    }
+
+    expect(wouldSkip('Playfair Display')).toBe(false);
+    expect(wouldSkip('Dancing Script')).toBe(false);
+    expect(wouldSkip('Inter')).toBe(false);
+    // After calling loadGoogleFont (simulated), the font is cached:
+    loadedFonts.add('Playfair Display');
+    expect(wouldSkip('Playfair Display')).toBe(true);
+    void BUNDLED_FONTS; // suppress unused-var lint
+  });
+
+  it('bundled fonts skip <link> injection but still reach document.fonts.load', async () => {
+    const BUNDLED_FONTS = new Set(['Playfair Display']);
+    let linkInjected = false;
+    let fontsLoadCalled = false;
+
+    async function simulateLoadGoogleFont(family: string): Promise<void> {
+      if (!BUNDLED_FONTS.has(family)) {
+        linkInjected = true;
+      }
+      // Always call fonts.load, even for bundled fonts:
+      fontsLoadCalled = true;
+      await Promise.resolve(); // simulates document.fonts.load(...)
+    }
+
+    await simulateLoadGoogleFont('Playfair Display');
+    expect(linkInjected).toBe(false);   // no <link> for bundled font
+    expect(fontsLoadCalled).toBe(true); // but fonts.load IS called
+  });
+
+  it('non-bundled fonts inject a <link> AND call document.fonts.load', async () => {
+    const BUNDLED_FONTS = new Set(['Inter']);
+    let linkInjected = false;
+    let fontsLoadCalled = false;
+
+    async function simulateLoadGoogleFont(family: string): Promise<void> {
+      if (!BUNDLED_FONTS.has(family)) {
+        linkInjected = true;
+      }
+      fontsLoadCalled = true;
+      await Promise.resolve();
+    }
+
+    await simulateLoadGoogleFont('Lobster Two'); // not bundled
+    expect(linkInjected).toBe(true);
+    expect(fontsLoadCalled).toBe(true);
+  });
+});

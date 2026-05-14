@@ -1,25 +1,40 @@
-// Fonts bundled via @fontsource — no network request needed
+// Fonts bundled via @fontsource — these have @font-face declared by the bundle,
+// but the browser only fetches the actual font file lazily (on first measure /
+// paint).  We still need to force-load them via document.fonts.load() so that
+// Fabric's canvas-2D measureText() sees the real font instead of the fallback.
 const BUNDLED_FONTS = new Set([
   'Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins',
   'Nunito', 'Oswald', 'Raleway', 'Merriweather', 'Playfair Display',
   'Bebas Neue', 'Dancing Script', 'Pacifico', 'Lobster',
 ]);
 
-const loadedFonts = new Set<string>([...BUNDLED_FONTS]);
+// Tracks fonts already force-loaded in this session so we don't re-await.
+const loadedFonts = new Set<string>();
 
 export async function loadGoogleFont(family: string): Promise<void> {
   if (loadedFonts.has(family)) return;
 
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@400;700&display=swap`;
-  document.head.appendChild(link);
+  // For non-bundled fonts, inject the Google Fonts <link> so the @font-face
+  // declarations exist before document.fonts.load() can resolve them.
+  if (!BUNDLED_FONTS.has(family)) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@400;700&display=swap`;
+    document.head.appendChild(link);
+  }
 
+  // Force the browser to actually fetch and parse the font.  Without this,
+  // the @font-face declaration exists but the font file is only fetched on
+  // first measure/paint — which means Fabric's first measureText() uses
+  // fallback metrics, producing a width too narrow for the real glyphs and
+  // clipping the last character on the right after a save→reload cycle.
   try {
-    await document.fonts.load(`16px "${family}"`);
+    await Promise.all([
+      document.fonts.load(`16px "${family}"`),
+      document.fonts.load(`bold 16px "${family}"`),
+    ]);
     loadedFonts.add(family);
   } catch {
-    // Font may still be available even if load() times out
     loadedFonts.add(family);
   }
 }

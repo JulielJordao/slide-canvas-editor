@@ -280,7 +280,13 @@ export function useFabricCanvas() {
 
   function getJSON(): string {
     if (!canvasInstance) return JSON.stringify({ version: '6.0.0', objects: [] });
-    const raw = (canvasInstance as any).toJSON(CUSTOM_PROPS) as Record<string, unknown>;
+    // Fabric v6's canvas.toJSON() does NOT forward propertiesToInclude — it
+    // calls this.toObject() with no args (see fabric/dist/index.mjs ~L2939).
+    // Use toObject() directly so CUSTOM_PROPS (name/id/customType) actually
+    // make it into the serialised output. Without this, animation effects
+    // can't re-link to objects after save→reload (they reference objectId,
+    // which is the object's name).
+    const raw = (canvasInstance as any).toObject(CUSTOM_PROPS) as Record<string, unknown>;
     // Strip background properties — these are managed by slide.background / applyBackground.
     // Keeping them in the snapshot causes loadFromJSON to restore stale video/image
     // backgroundImage references (which fail to load), blocking object restoration.

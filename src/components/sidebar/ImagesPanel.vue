@@ -41,6 +41,24 @@
         </div>
       </div>
     </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Neste slide</div>
+      <div v-if="canvasImages.length === 0" class="empty-state">
+        Nenhuma imagem no slide.
+      </div>
+      <div class="image-grid" v-else>
+        <div
+          v-for="img in canvasImages"
+          :key="img.name"
+          class="image-thumb"
+          @click="selectCanvasImage(img.name)"
+          title="Selecionar imagem no canvas"
+        >
+          <img :src="img.src" alt="" />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -147,8 +165,64 @@ function onAddImageEvent(e: Event) {
   pushRecent(path);
 }
 
-onMounted(() => window.addEventListener('se:add-image', onAddImageEvent));
-onUnmounted(() => window.removeEventListener('se:add-image', onAddImageEvent));
+// ── "Neste slide": images currently placed on the canvas ────────────────────
+//
+// These are the Fabric Image objects on the active slide.  When a project is
+// opened (at startup or via "abrir projeto"), loadFromJSON revives each image
+// from its stored base64 src and fires se:canvas-objects-changed, so this list
+// repopulates automatically.
+
+interface CanvasImage { name: string; src: string; }
+
+const canvasImages = ref<CanvasImage[]>([]);
+
+function getCanvas(): any {
+  return (window as any).__slideEditorCanvas ?? null;
+}
+
+// Pull every Image object's identifier + source out of a Fabric object list.
+// Exported-style pure helper so the filtering logic is unit-testable.
+function extractCanvasImages(objects: any[]): CanvasImage[] {
+  const out: CanvasImage[] = [];
+  for (const obj of objects) {
+    const t = (obj?.type ?? '').toLowerCase();
+    if (!t.includes('image')) continue;
+    let src = '';
+    try {
+      src = obj.getSrc?.() ?? obj._element?.src ?? obj._originalElement?.src ?? '';
+    } catch {
+      src = '';
+    }
+    if (!src) continue;
+    out.push({ name: obj.name ?? obj.id ?? '', src });
+  }
+  return out;
+}
+
+function refreshCanvasImages() {
+  const canvas = getCanvas();
+  canvasImages.value = canvas ? extractCanvasImages(canvas.getObjects()) : [];
+}
+
+function selectCanvasImage(name: string) {
+  const canvas = getCanvas();
+  if (!canvas || !name) return;
+  const obj = canvas.getObjects().find((o: any) => (o.name ?? o.id) === name);
+  if (obj) {
+    canvas.setActiveObject(obj);
+    canvas.requestRenderAll();
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('se:add-image', onAddImageEvent);
+  window.addEventListener('se:canvas-objects-changed', refreshCanvasImages);
+  refreshCanvasImages();
+});
+onUnmounted(() => {
+  window.removeEventListener('se:add-image', onAddImageEvent);
+  window.removeEventListener('se:canvas-objects-changed', refreshCanvasImages);
+});
 </script>
 
 <style scoped>

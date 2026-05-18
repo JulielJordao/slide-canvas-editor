@@ -1,26 +1,49 @@
 <template>
-  <div class="color-picker" ref="rootRef">
+  <div class="color-picker" :class="{ compact }" ref="rootRef">
     <div class="color-row">
       <div class="color-preview" :style="{ background: modelValue }" @click="togglePicker" />
-      <input
-        type="text"
-        :value="hexInput"
-        @input="onHexInput"
-        @blur="onHexBlur"
-        class="hex-input"
-        maxlength="7"
-        spellcheck="false"
-      />
-      <button class="eyedrop-btn" title="Conta-gotas: clicar no canvas" @click.stop="startEyedrop">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 21l2-2 9.5-9.5-2-2L3 21z"/>
-          <path d="M15.5 5.5l2-2a2 2 0 0 1 2.83 2.83l-2 2-2.83-2.83z"/>
-          <path d="M12.5 8.5l3 3"/>
-        </svg>
-      </button>
+      <template v-if="!compact">
+        <input
+          type="text"
+          :value="hexInput"
+          @input="onHexInput"
+          @blur="onHexBlur"
+          class="hex-input"
+          maxlength="7"
+          spellcheck="false"
+        />
+        <button class="eyedrop-btn" title="Conta-gotas: clicar no canvas" @click.stop="startEyedrop">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 21l2-2 9.5-9.5-2-2L3 21z"/>
+            <path d="M15.5 5.5l2-2a2 2 0 0 1 2.83 2.83l-2 2-2.83-2.83z"/>
+            <path d="M12.5 8.5l3 3"/>
+          </svg>
+        </button>
+      </template>
     </div>
 
     <div v-if="showPicker" class="picker-popup">
+      <!-- Compact: hex + eyedrop live inside the popup to keep the closed
+           control down to a single swatch. -->
+      <div v-if="compact" class="color-row popup-hex-row">
+        <input
+          type="text"
+          :value="hexInput"
+          @input="onHexInput"
+          @blur="onHexBlur"
+          class="hex-input"
+          maxlength="7"
+          spellcheck="false"
+        />
+        <button class="eyedrop-btn" title="Conta-gotas: clicar no canvas" @click.stop="startEyedrop">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 21l2-2 9.5-9.5-2-2L3 21z"/>
+            <path d="M15.5 5.5l2-2a2 2 0 0 1 2.83 2.83l-2 2-2.83-2.83z"/>
+            <path d="M12.5 8.5l3 3"/>
+          </svg>
+        </button>
+      </div>
+
       <!-- SV gradient area -->
       <div
         class="sv-area"
@@ -66,7 +89,7 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { isValidHex, hexToHsv, hsvToHex } from '@/utils/colorUtils';
 
-const props = defineProps<{ modelValue: string }>();
+const props = defineProps<{ modelValue: string; compact?: boolean }>();
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>();
 
 const showPicker = ref(false);
@@ -242,6 +265,21 @@ const swatches = [
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   z-index: 100;
+}
+
+/* Compact mode: the closed control is just the swatch, and the popup floats
+   absolutely so opening it does not grow the control's box — which would
+   otherwise vertically recentre every sibling in the floating toolbar. */
+.color-picker.compact .picker-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  margin-top: 0;
+  width: 200px;
+}
+
+.popup-hex-row {
+  margin-bottom: 8px;
 }
 
 /* SV gradient */

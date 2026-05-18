@@ -99,7 +99,7 @@ const tabs = [
 <style scoped>
 .sidebar-left {
   display: flex;
-  width: 280px;
+  width: 320px;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   background: var(--bg-sidebar);
@@ -172,5 +172,12 @@ const tabs = [
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* Each panel manages its own vertical scroll; force-hide horizontal overflow
+   so a slightly-too-wide control never produces a horizontal scrollbar.
+   Targets the root element of each panel child component. */
+.tab-panel > * {
+  overflow-x: hidden;
 }
 </style>

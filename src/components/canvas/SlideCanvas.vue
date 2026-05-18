@@ -101,7 +101,7 @@ const { isOver: isDropOver } = useDropZone(
     await handleFilePaths(paths);
   },
 );
-const { onCanvasReady, applyTimeMs } = useAnimation(getCanvas);
+const { onCanvasReady, applyTimeMs, stopPlayback } = useAnimation(getCanvas);
 
 const scale = ref(1);
 
@@ -253,9 +253,11 @@ watch(
     const canvas = getCanvas();
     if (!canvas) return;
 
-    // Save current canvas state
+    // Save current canvas state.  Stop playback first so typewriter effects
+    // that have cleared obj.text mid-animation are restored before we serialise.
     const prevSlide = slidesStore.slides[oldIdx ?? 0];
     if (prevSlide) {
+      stopPlayback();
       slidesStore.updateActiveSlideJSON(getJSON());
     }
 
@@ -485,10 +487,17 @@ onMounted(async () => {
   // Auto-save restore: re-initialize canvas with loaded project data
   window.addEventListener('se:reload-canvas', () => initializeCanvas());
 
-  // Flush current canvas JSON to slides store (used before file-save)
+  // Flush current canvas JSON to slides store (used before file-save).
+  // CRITICAL: stopPlayback() first so any typewriter effect that has cleared
+  // `obj.text = ''` mid-animation gets restored to its original text BEFORE
+  // we serialise.  Without this, saving while the playhead is past a
+  // typewriter's startMs persists empty text to disk, losing the content
+  // permanently after reload.
   window.addEventListener('se:flush-canvas', () => {
     const canvas = getCanvas();
-    if (canvas) slidesStore.updateActiveSlideJSON(getJSON());
+    if (!canvas) return;
+    stopPlayback();
+    slidesStore.updateActiveSlideJSON(getJSON());
   });
 
   // Timeline hover preview: seek canvas to the given time without moving the playhead

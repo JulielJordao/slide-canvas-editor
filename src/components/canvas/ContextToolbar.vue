@@ -4,7 +4,7 @@
     <!-- === NO SELECTION: background + add-text shortcut === -->
     <template v-if="selType === 'none'">
       <span class="ctx-label">Fundo</span>
-      <ColorPicker v-if="isSolidBg" :model-value="bgColor" @update:model-value="onBgColor" />
+      <ColorPicker v-if="isSolidBg" compact :model-value="bgColor" @update:model-value="onBgColor" />
       <span v-else class="ctx-badge" :title="`Fundo: ${bgTypeLabel}`">{{ bgTypeLabel }}</span>
       <div class="sep" />
       <button class="ctx-pill" @click="addText" title="Adicionar caixa de texto (T)">
@@ -24,8 +24,12 @@
     <!-- === TEXT === -->
     <template v-else-if="selType === 'text'">
       <FontDropdown :model-value="textFont" placement="auto" @select="onFont" />
-      <input type="number" class="ctx-num" min="6" max="800" step="1" :value="textSize" @change="onSize" title="Tamanho da fonte" />
-      <ColorPicker :model-value="textColor" @update:model-value="onTextColor" />
+      <div class="ctx-stepper">
+        <button class="ctx-step" @click="stepSize(-1)" title="Diminuir tamanho">−</button>
+        <input type="number" class="ctx-num" min="6" max="800" step="1" :value="textSize" @change="onSize" title="Tamanho da fonte" />
+        <button class="ctx-step" @click="stepSize(1)" title="Aumentar tamanho">+</button>
+      </div>
+      <ColorPicker compact :model-value="textColor" @update:model-value="onTextColor" />
       <div class="sep" />
       <button class="icon-btn" :class="{ active: isBold }" @click="toggleBold" title="Negrito">
         <strong>B</strong>
@@ -71,7 +75,7 @@
     <!-- === SHAPE === -->
     <template v-else-if="selType === 'shape'">
       <span class="ctx-label">Cor</span>
-      <ColorPicker :model-value="fillColor" @update:model-value="onFillColor" />
+      <ColorPicker compact :model-value="fillColor" @update:model-value="onFillColor" />
       <div class="sep" />
       <span class="ctx-label">Opacidade</span>
       <input type="range" min="0" max="100" :value="Math.round(opacity * 100)" @input="onOpacity" class="ctx-range" title="Opacidade da forma" />
@@ -224,6 +228,15 @@ function onSize(e: Event) {
   rerender();
 }
 
+function stepSize(delta: number) {
+  const obj = getActive() as any;
+  if (!obj) return;
+  const current = Number(obj.fontSize) || 24;
+  const next = Math.max(6, Math.min(800, current + delta));
+  obj.set('fontSize', next);
+  rerender();
+}
+
 function onTextColor(color: string) { (getActive() as any)?.set('fill', color); rerender(); }
 
 function toggleBold() {
@@ -368,15 +381,49 @@ function deleteSelected() {
   color: var(--text-primary);
 }
 
+.ctx-stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ctx-step {
+  width: 22px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.ctx-step:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
 .ctx-num {
-  width: 52px;
+  width: 42px;
   font-size: 12px;
   text-align: center;
-  padding: 4px 4px;
+  padding: 4px 2px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   color: var(--text-primary);
+}
+/* Hide the near-invisible native number spinners — the −/+ buttons replace them. */
+.ctx-num::-webkit-inner-spin-button,
+.ctx-num::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .ctx-range {

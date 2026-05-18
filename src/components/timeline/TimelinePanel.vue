@@ -64,10 +64,15 @@
           />
         </div>
         <div class="zoom-btns">
-          <button class="icon-btn" @click="animStore.setTimelineZoom(animStore.timelineZoom - 20)" title="Zoom -">
+          <button class="icon-btn" @click="zoomBy(-20)" title="Zoom out (Ctrl+Scroll)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
-          <button class="icon-btn" @click="animStore.setTimelineZoom(animStore.timelineZoom + 20)" title="Zoom +">
+          <span
+            class="zoom-label"
+            @dblclick="animStore.setTimelineZoom(100)"
+            title="Duplo clique para resetar o zoom"
+          >{{ animStore.timelineZoom }}%</span>
+          <button class="icon-btn" @click="zoomBy(20)" title="Zoom in (Ctrl+Scroll)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
         </div>
@@ -107,7 +112,7 @@
         </div>
       </div>
 
-      <div class="timeline-scroll-area" ref="scrollRef" @scroll="onScrollAreaScroll">
+      <div class="timeline-scroll-area" ref="scrollRef" @scroll="onScrollAreaScroll" @wheel="onScrollAreaWheel">
         <!-- Ruler -->
         <div class="ruler" :style="rulerStyle">
           <div
@@ -172,7 +177,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useAnimationStore } from '@/stores/animation';
 import { useSlidesStore } from '@/stores/slides';
 import { useObjectUtils } from '@/composables/useAnimation';
@@ -246,8 +251,14 @@ function xToMs(x: number): number {
 const rulerStyle = computed(() => ({ width: `${timelineWidth.value}px` }));
 
 const rulerMarks = computed(() => {
+  const totalPx = timelineWidth.value - 40;
+  const pxPerMs = totalPx / animStore.totalDurationMs;
+  // Target ~70px between marks; pick the smallest nice step that achieves it.
+  const targetGapPx = 70;
+  const rawMs = targetGapPx / pxPerMs;
+  const niceSteps = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000];
+  const step = niceSteps.find(s => s >= rawMs) ?? niceSteps[niceSteps.length - 1];
   const marks = [];
-  const step = animStore.totalDurationMs <= 5000 ? 500 : animStore.totalDurationMs <= 15000 ? 1000 : 2000;
   for (let ms = 0; ms <= animStore.totalDurationMs; ms += step) {
     marks.push({ ms });
   }
@@ -317,6 +328,36 @@ function onDurationChange(e: Event) {
     animStore.setTotalDuration(ms);
     slidesStore.setSlideDuration(slidesStore.activeSlide.id, ms);
     window.dispatchEvent(new CustomEvent('se:commit-history'));
+  }
+}
+
+// ── Zoom ──────────────────────────────────────────────────────────────────────
+
+function zoomBy(delta: number) {
+  animStore.setTimelineZoom(animStore.timelineZoom + delta);
+}
+
+// Ctrl+Scroll: zoom centred on the cursor position so the point under the
+// mouse stays stationary after the zoom.
+async function onScrollAreaWheel(e: WheelEvent) {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  if (!scrollRef.value) return;
+
+  const rect = scrollRef.value.getBoundingClientRect();
+  const cursorX = e.clientX - rect.left;
+  const msAtCursor = xToMs(cursorX + scrollRef.value.scrollLeft);
+
+  // Finer steps at high zoom, coarser at low zoom.
+  const step = animStore.timelineZoom >= 200 ? 25 : animStore.timelineZoom >= 80 ? 15 : 8;
+  const delta = e.deltaY < 0 ? step : -step;
+  animStore.setTimelineZoom(animStore.timelineZoom + delta);
+
+  // Wait for Vue to recompute timelineWidth and repaint the wider/narrower
+  // content before we adjust scrollLeft, otherwise it gets clamped.
+  await nextTick();
+  if (scrollRef.value) {
+    scrollRef.value.scrollLeft = Math.max(0, msToX(msAtCursor) - cursorX);
   }
 }
 
@@ -562,7 +603,28 @@ onUnmounted(() => {
   padding: 3px 6px;
 }
 
-.zoom-btns { display: flex; gap: 2px; }
+.zoom-btns {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.zoom-label {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--text-muted);
+  min-width: 36px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  padding: 0 2px;
+  border-radius: var(--radius-sm);
+  transition: color 0.1s, background 0.1s;
+}
+.zoom-label:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
 
 /* Timeline body */
 .timeline-body {
@@ -606,8 +668,27 @@ onUnmounted(() => {
 
 .timeline-scroll-area {
   flex: 1;
-  overflow: auto;
+  overflow-x: scroll; /* always-visible horizontal bar — the primary navigation axis */
+  overflow-y: auto;
   position: relative;
+}
+
+/* Always-visible, consistently styled scrollbar for the timeline (WebKit/Blink).
+   On macOS/Tauri, overlay scrollbars disappear when not in use — using
+   ::-webkit-scrollbar forces a persistent track so the user can always grab it. */
+.timeline-scroll-area::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.timeline-scroll-area::-webkit-scrollbar-track {
+  background: var(--bg-elevated);
+}
+.timeline-scroll-area::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+.timeline-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 .ruler {
@@ -617,7 +698,6 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 10;
-  position: relative;
 }
 
 .ruler-mark {

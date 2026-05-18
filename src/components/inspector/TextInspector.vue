@@ -123,18 +123,39 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import * as fabric from 'fabric';
 import FontPicker from '@/components/shared/FontPicker.vue';
 import ColorPicker from '@/components/shared/ColorPicker.vue';
 import { loadGoogleFont } from '@/utils/fontLoader';
 import { useSettingsStore } from '@/stores/settings';
+import { useCanvasStore } from '@/stores/canvas';
 
 const props = defineProps<{ canvasGetter: () => fabric.Canvas | null }>();
 const settings = useSettingsStore();
+const canvasStore = useCanvasStore();
 
-function getObj(): any { return props.canvasGetter()?.getActiveObject() ?? null; }
-function rerender() { props.canvasGetter()?.requestRenderAll(); }
+// Fabric objects are not Vue-reactive, so mutating one via obj.set() triggers
+// no re-evaluation of the computeds below. `rev` is a manual reactivity trigger:
+// getObj() touches it (and the store selection), so every computed that calls
+// getObj() re-evaluates after rerender() bumps `rev` or the selection changes.
+const rev = ref(0);
+
+function getObj(): any {
+  void rev.value;
+  void canvasStore.selectedObjectIds;
+  return props.canvasGetter()?.getActiveObject() ?? null;
+}
+function rerender() {
+  rev.value++;
+  const canvas = props.canvasGetter();
+  if (!canvas) return;
+  canvas.requestRenderAll();
+  // Fire object:modified so the change is captured by history / slide JSON —
+  // obj.set() alone is silent and would otherwise never be persisted.
+  const obj = canvas.getActiveObject();
+  if (obj) canvas.fire('object:modified', { target: obj });
+}
 
 const fontSize = computed(() => getObj()?.fontSize ?? 24);
 const fillColor = computed(() => getObj()?.fill ?? '#ffffff');
